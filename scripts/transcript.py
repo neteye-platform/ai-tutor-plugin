@@ -128,7 +128,7 @@ def _path_of(tool_input: object) -> str | None:
     return None
 
 
-def signals(transcript_path: str | None) -> dict:
+def signals(transcript_path: object) -> dict:
     """Return counted facts about recent session behaviour.
 
     Keys are always present so callers need no defensive lookups:
@@ -140,6 +140,10 @@ def signals(transcript_path: str | None) -> dict:
       error_streak       trailing run of failed tool results
       no_test_after_edit True if files changed but nothing test-shaped ran since
       compactions       count of automatic compaction boundaries in the window
+
+    `transcript_path` arrives from an untrusted hook payload and is not annotated as a
+    string, because it is not guaranteed to be one. `Path()` raises TypeError on a
+    non-string, and a crash here breaks the user's turn.
     """
     empty = {
         "reads_since_edit": 0,
@@ -151,7 +155,7 @@ def signals(transcript_path: str | None) -> dict:
         "no_test_after_edit": False,
         "compactions": 0,
     }
-    if not transcript_path:
+    if not isinstance(transcript_path, str) or not transcript_path:
         return empty
     path = Path(transcript_path).expanduser()
     if not path.is_file():

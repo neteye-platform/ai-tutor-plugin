@@ -17,6 +17,7 @@ are deliberately excluded, matching the statusline's definition.
 """
 
 import json
+import math
 from pathlib import Path
 
 # Model context windows.
@@ -31,8 +32,11 @@ LARGE_WINDOW = 1_000_000
 LARGE_WINDOW_HINTS = ("[1m]", "-1m", "fable")
 
 
-def window_for(model: str | None) -> int:
-    if not model:
+def window_for(model: object) -> int:
+    # Not annotated `str | None` because it is not always one: Claude Code's statusline
+    # payload carries `model` as a dict, and a transcript's `message.model` can be any
+    # JSON value. Anything unusable falls back to the conservative default.
+    if not isinstance(model, str) or not model:
         return DEFAULT_WINDOW
     slug = model.lower()
     if any(h in slug for h in LARGE_WINDOW_HINTS):
@@ -109,18 +113,27 @@ def _usage_from_record(rec: dict) -> dict | None:
 
 
 def _int(value: object) -> int:
-    """Coerce a token count to an int, treating anything unusable as zero.
+    """Coerce a token count to a non-negative int, treating anything unusable as zero.
 
     Token counts are self-reported by the host and are not guaranteed numeric: a string
     here used to raise ValueError out of the hook. Zero is the safe reading, because it
     biases the estimate downward and therefore toward staying quiet.
+
+    Two float cases need explicit rejection rather than int(): `json.loads` accepts the
+    non-standard literals NaN, Infinity and -Infinity, and int() raises ValueError on
+    the first and OverflowError on the others. Neither is caught upstream, so a
+    malformed transcript would kill the hook and break the user's turn. Negative counts
+    are clamped for the same reason zero is the fallback: a negative would silently
+    subtract from the total and hide real context pressure.
     """
     if isinstance(value, bool):
         return 0
     if isinstance(value, int):
-        return value
+        return max(0, value)
     if isinstance(value, float):
-        return int(value)
+        if not math.isfinite(value):
+            return 0
+        return max(0, int(value))
     return 0
 
 
@@ -141,15 +154,16 @@ def _total_input(usage: dict) -> int | None:
     return None
 
 
-def used_percentage(
-    transcript_path: str | None, model: str | None = None
-) -> int | None:
+def used_percentage(transcript_path: object, model: object = None) -> int | None:
     """Return 0-100, or None when it cannot be determined.
 
     None is a first-class answer: better a quiet coach than one warning on invented
     numbers.
+
+    Both arguments come straight from an untrusted hook payload, so neither is annotated
+    as a string. `Path()` raises TypeError on a non-string, which would kill the hook.
     """
-    if not transcript_path:
+    if not isinstance(transcript_path, str) or not transcript_path:
         return None
     path = Path(transcript_path).expanduser()
     if not path.is_file():

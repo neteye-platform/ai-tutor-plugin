@@ -20,6 +20,7 @@ Design rules, in priority order:
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -226,9 +227,16 @@ def read_used_pct(data):
     3. A file published by the Claude Code statusline. Only a fallback now, for the
        case where a transcript is unreadable but a statusline is running.
     """
-    inline = (data.get("context_window") or {}).get("used_percentage")
-    if isinstance(inline, (int, float)):
-        return int(inline)
+    # `or {}` is not enough: a string or list here is truthy and then raises on .get().
+    window = data.get("context_window")
+    inline = window.get("used_percentage") if isinstance(window, dict) else None
+    # bool is an int subclass, and NaN/Infinity survive json.loads and then raise in
+    # int(), so both are screened before the conversion rather than after.
+    if isinstance(inline, (int, float)) and not isinstance(inline, bool):
+        if math.isfinite(inline):
+            # The host reports this; clamp rather than trust, so a bad reading cannot
+            # produce a "context is 9999% full" nudge.
+            return max(0, min(100, int(inline)))
 
     pct = used_percentage(data.get("transcript_path"), data.get("model"))
     if pct is not None:
@@ -240,9 +248,15 @@ def read_used_pct(data):
         # fire a spurious nudge on turn one.
         if time.time() - note.stat().st_mtime > USED_PCT_MAX_AGE_S:
             return None
-        return int(float(note.read_text().strip()))
+        raw = float(note.read_text().strip())
     except (OSError, ValueError):
         return None
+    # float() accepts "inf" and "nan", and int() then raises OverflowError, which the
+    # clause above does not catch. Screen instead of widening it: a non-finite gauge
+    # reading is meaningless anyway.
+    if not math.isfinite(raw):
+        return None
+    return max(0, min(100, int(raw)))
 
 
 DEFAULT_STATE = {"turns": 0, "streak": 0, "shown": []}
