@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "tutor",
+  "displayName": "Tutor",
+  "version": "0.1.0",
+  "description": "Coaches you on using Claude Code well: audits your config against documented limits and nudges you when prompting or session habits drift into known anti-patterns.",
+  "author": {
+    "name": "Marco Berlanda",
+    "url": "https://github.com/neteye-platform/ai-tutor-plugin"
+  },
+  "keywords": [
+    "coaching",
+    "context-engineering",
+    "best-practices",
+    "linting"
+  ],
+  "skills": [
+    "./"
+  ],
+  "hooks": "./hooks/hooks.json"
+}
