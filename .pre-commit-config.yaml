@@ -1,0 +1,86 @@
+# NOTE: This file should be named prek.toml but Renovate does not support it yet.
+repos:
+  - repo: builtin
+    hooks:
+      - id: trailing-whitespace
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+      - id: check-json
+      - id: check-json5
+      - id: check-toml
+      - id: check-yaml
+        args:
+          - --allow-multiple-documents
+      - id: check-xml
+      - id: mixed-line-ending
+      - id: check-symlinks
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-executables-have-shebangs
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: check-ast
+      - id: check-shebang-scripts-are-executable
+      - id: requirements-txt-fixer
+
+  - repo: meta
+    hooks:
+      - id: check-useless-excludes
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: 57b21406f092110c18776e39b0bda50d37c945c8 # frozen: v2.4.3
+    hooks:
+      - id: codespell
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca # frozen: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: 745eface02aef23e168a8afb6b5737818efbea95 # frozen: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: aab412d509121cb5f7533134b7e67f9fab59c682 # frozen: v0.16.4
+    hooks:
+      - id: ruff-check
+        args:
+          - --fix
+      - id: ruff-format
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: b84c4a0a90bd58c7d82ae8f0d4d5e77b1ddd3ce6 # frozen: 0.12.5
+    hooks:
+      - id: uv-lock
+
+  - repo: https://github.com/ansible/ansible-lint
+    rev: 665d9e07a1943254d2910faffc106adaf7ea7294 # frozen: v26.8.0
+    hooks:
+      - id: ansible-lint
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: 2eece55955ced00200be9729e9728cb7dacca505 # frozen: v2.15.1
+    hooks:
+      - id: hadolint-docker
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: b82a6c8896e491b9cb377a99ff3412131920681b # frozen: v0.23.2
+    hooks:
+      - id: markdownlint-cli2
+
+  - repo: https://github.com/renovatebot/pre-commit-hooks
+    rev: 8039dbf263ae0f460f39e781030675ba3e72f620 # frozen: 44.40.0
+    hooks:
+      - id: renovate-config-validator
+        args: [--strict]
