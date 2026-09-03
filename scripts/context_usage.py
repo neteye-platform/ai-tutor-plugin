@@ -57,7 +57,10 @@ def observed_window(records: list[str]) -> int | None:
             rec = _json.loads(line)
         except (ValueError, TypeError):
             continue
-        pre = (rec.get("compactMetadata") or {}).get("preTokens")
+        meta = rec.get("compactMetadata")
+        if not isinstance(meta, dict):
+            continue
+        pre = meta.get("preTokens")
         if isinstance(pre, int) and pre > 0:
             best = max(best or 0, pre)
     if not best:

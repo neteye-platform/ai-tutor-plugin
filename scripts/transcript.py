@@ -106,7 +106,15 @@ def _result_verdict(rec: dict) -> bool | None:
     return None
 
 
-def _path_of(tool_input: dict) -> str | None:
+def _path_of(tool_input: object) -> str | None:
+    """Pull a file path out of a tool input, whatever shape it arrives in.
+
+    Guards the type here rather than trusting callers. `_tool_calls` normalises its
+    output, but this is also reachable from anywhere a future caller passes a raw
+    transcript value, and a crash in a hook breaks the user's turn.
+    """
+    if not isinstance(tool_input, dict):
+        return None
     for key in ("file_path", "filePath", "path", "notebook_path"):
         value = tool_input.get(key)
         if isinstance(value, str) and value:
@@ -206,11 +214,12 @@ def signals(transcript_path: str | None) -> dict:
 
     # Repeated automatic compaction is the guide's clearest scoping signal: the task is
     # too big for the window, and each event costs the user real wall-clock time.
-    compactions = sum(
-        1
-        for rec in records
-        if (rec.get("compactMetadata") or {}).get("trigger") == "auto"
-    )
+    # `or {}` is not enough here: a non-dict value is truthy and then raises on .get().
+    compactions = 0
+    for rec in records:
+        meta = rec.get("compactMetadata")
+        if isinstance(meta, dict) and meta.get("trigger") == "auto":
+            compactions += 1
 
     return {
         "reads_since_edit": reads_since_edit,

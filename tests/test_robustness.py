@@ -5,6 +5,7 @@ always exit 0. A coach that breaks a turn is worse than no coach."""
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -30,16 +31,58 @@ CASES = [
     ("lint.py", "{}", "no cwd"),
     ("lint.py", '{"cwd":null}', "null cwd"),
     ("review_prompt.py", '{"prompt":"test a thing"}', "disabled by default"),
-    # Regression cases: nested transcript fields are untrusted, and a wrong type here
-    # used to raise AttributeError and break the turn.
-    ("coach.py", '{"prompt":"x","transcript_path":"/dev/null"}', "empty transcript"),
     ("lint.py", "[]", "json array on stdin"),
     ("lint.py", "42", "bare scalar on stdin"),
     ("lint.py", "not json", "non-json on stdin"),
 ]
 
+# Malformed *nested* transcript records. An earlier version assumed `message`, `info`,
+# and the tool-input fields were always dicts, and raised AttributeError on anything
+# else, which killed the hook mid-turn. An empty file such as /dev/null never reaches
+# that parsing at all, so these need real records with wrongly-typed nested fields.
+NESTED_RECORD_CASES = [
+    ({"message": "a string, not a dict"}, "message is a string"),
+    ({"message": ["a", "list"]}, "message is a list"),
+    ({"message": 42}, "message is a number"),
+    ({"info": "not a dict"}, "info is a string"),
+    ({"info": ["x"]}, "info is a list"),
+    ({"usage": "not a dict"}, "usage is a string"),
+    ({"message": {"usage": "not a dict"}}, "nested usage is a string"),
+    ({"message": {"content": "not a list"}}, "content is a string"),
+    ({"message": {"content": [None, 7, "x"]}}, "content holds non-dicts"),
+    (
+        {
+            "message": {
+                "content": [{"type": "tool_use", "name": "Read", "input": "str"}]
+            }
+        },
+        "tool_use input is a string",
+    ),
+    (
+        {
+            "message": {
+                "content": [{"type": "tool_use", "name": "Read", "input": ["a"]}]
+            }
+        },
+        "tool_use input is a list",
+    ),
+    ({"tool_name": "Read", "tool_input": ["a"]}, "flat tool_input is a list"),
+    ({"tool_name": "Read", "tool_input": "s", "args": 1}, "flat input and args wrong"),
+    ({"toolUseResult": "not a dict"}, "toolUseResult is a string"),
+    ({"compactMetadata": "not a dict"}, "compactMetadata is a string"),
+]
+
 fails = 0
-for script, payload, label in CASES:
+
+
+def check(script: str, payload: str, label: str) -> None:
+    """Run one script against one payload and report any contract violation.
+
+    The contract a hook must honour: exit 0, write nothing to stderr, and emit either
+    valid JSON or nothing at all. Human-readable prose reaching a hook is a bug,
+    because the host expects JSON.
+    """
+    global fails
     # Fixed interpreter, repo-controlled script path, shell=False: no injection surface.
     proc = subprocess.run(
         [sys.executable, str(REPO / "scripts" / script)],
@@ -54,8 +97,6 @@ for script, payload, label in CASES:
         problems.append(f"exit={proc.returncode}")
     if proc.stderr.strip():
         problems.append("stderr=" + proc.stderr.strip().splitlines()[-1][:60])
-    # Any stdout must be valid JSON, or the host cannot parse it. Human-readable
-    # prose reaching a hook is a bug: the tool expects JSON or nothing.
     if proc.stdout.strip():
         try:
             json.loads(proc.stdout)
@@ -63,10 +104,60 @@ for script, payload, label in CASES:
             problems.append("stdout not valid JSON")
         if proc.stdout.startswith("tutor:"):
             problems.append("leaked CLI prose into hook output")
-    status = "FAIL " + "; ".join(problems) if problems else "ok"
     if problems:
         fails += 1
-    print(f"  {script:18} {label:24} {status}")
+    print(
+        f"  {script:18} {label:26} {'FAIL ' + '; '.join(problems) if problems else 'ok'}"
+    )
+
+
+for script, payload, label in CASES:
+    check(script, payload, label)
+
+# Write each malformed record to a real transcript so the nested-field parsing in
+# transcript.py and context_usage.py actually runs against it.
+with tempfile.TemporaryDirectory() as tmp:
+    for i, (record, label) in enumerate(NESTED_RECORD_CASES):
+        path = Path(tmp) / f"t{i}.jsonl"
+        # Repeat each record several times, and pad with well-formed read calls, so the
+        # deeper code paths actually execute. Some of them only run once a threshold is
+        # crossed: the repeat-read counter, for instance, is built with a filter that
+        # short-circuits, so a single malformed record slips past it untouched. A test
+        # that does not cross the threshold proves nothing.
+        padding = json.dumps(
+            {
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Read",
+                            "input": {"file_path": "/tmp/a.ts"},
+                        }
+                    ]
+                }
+            }
+        )
+        usage = json.dumps({"message": {"usage": {"input_tokens": 10}}})
+        path.write_text(
+            "\n".join(
+                [json.dumps(record)] * 4
+                + [padding] * 3
+                + [usage]
+                + [json.dumps(record)] * 2
+            )
+            + "\n"
+        )
+        check(
+            "coach.py",
+            json.dumps(
+                {
+                    "prompt": "fix the parser",
+                    "session_id": f"nested{i}",
+                    "transcript_path": str(path),
+                }
+            ),
+            label,
+        )
 
 # Corrupt state files: valid JSON of the wrong shape parses fine and then raises on
 # first use. A partial write during pruning, or two sessions writing at once, produces
@@ -93,27 +184,14 @@ for content, label in STATE_CASES:
         coach.STATE_DIR.mkdir(parents=True, exist_ok=True)
         state_file.write_text(content)
     except OSError:
-        print(f"  {'coach.py':18} {label:24} skipped (state dir unwritable)")
+        print(f"  {'coach.py':18} {label:26} skipped (state dir unwritable)")
         continue
-    proc = subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "coach.py")],
-        input=json.dumps(
+    check(
+        "coach.py",
+        json.dumps(
             {"prompt": "a clear prompt naming src/x.ts line 3", "session_id": session}
         ),
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    probs = []
-    if proc.returncode != 0:
-        probs.append(f"exit={proc.returncode}")
-    if proc.stderr.strip():
-        probs.append(proc.stderr.strip().splitlines()[-1][:50])
-    if probs:
-        fails += 1
-    print(
-        f"  {'coach.py':18} {label:24} {'FAIL ' + '; '.join(probs) if probs else 'ok'}"
+        label,
     )
     state_file.unlink(missing_ok=True)
 
@@ -130,7 +208,7 @@ proc = subprocess.run(
 bad = proc.returncode != 0 or proc.stderr.strip()
 fails += bool(bad)
 print(
-    f"  {'advise.py':18} {'nonexistent dir':24} "
+    f"  {'advise.py':18} {'nonexistent dir':26} "
     f"{'FAIL ' + proc.stderr.strip()[:60] if bad else 'ok'}"
 )
 
