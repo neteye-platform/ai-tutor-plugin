@@ -16,6 +16,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lint import TOOLS
+
 # --- patterns ---------------------------------------------------------------
 # Things the model does anyway. Telling it again spends context on nothing.
 OBVIOUS = re.compile(
@@ -214,31 +217,66 @@ def advise_agent(path: Path) -> list[str]:
     return out
 
 
+def _host_locations(
+    root: Path, home: Path
+) -> tuple[list[Path], list[Path], list[Path]]:
+    """Build (context files, skill roots, agent roots) from lint.py's TOOLS table.
+
+    Sharing that table matters: this module hardcoded a narrower set, so a Codex or
+    OpenCode user could be told there was "nothing specific to suggest" while their
+    real config sat in a directory it never looked at. One definition, one behaviour.
+    """
+    contexts: list[Path] = []
+    skills: list[Path] = []
+    agents: list[Path] = []
+    for key, spec in TOOLS.items():
+        tool_home = home / spec["home"]
+        project = root / f".{key}"
+        for name in spec["context_files"]:
+            contexts += [root / name, tool_home / name, project / name]
+        for d in spec["skill_dirs"]:
+            skills += [tool_home / d, project / d]
+        # Anchored at home and project root, never traversed up from a config dir.
+        for extra in spec.get("extra_skill_roots", ()):
+            skills += [home / extra, root / extra]
+        for d in spec["agent_dirs"]:
+            agents += [tool_home / d, project / d]
+    return contexts, skills, agents
+
+
 def collect(root: Path, home: Path) -> list[str]:
     out: list[str] = []
-    for name in ("CLAUDE.md", "AGENTS.md"):
-        for candidate in (root / name, home / ".claude" / name, home / ".codex" / name):
-            if candidate.is_file():
-                out += advise_context_file(candidate)
+    contexts, skill_roots, agent_roots = _host_locations(root, home)
+
+    seen_files: set[Path] = set()
+    for candidate in contexts:
+        resolved = candidate.resolve()
+        if resolved in seen_files or not candidate.is_file():
+            continue
+        seen_files.add(resolved)
+        out += advise_context_file(candidate)
 
     seen_skills: set[Path] = set()
-    for base in (
-        home / ".claude" / "skills",
-        root / ".claude" / "skills",
-        home / ".config" / "opencode" / "skills",
-    ):
+    for base in skill_roots:
         if not base.is_dir():
             continue
         for skill in sorted(base.glob("*/SKILL.md")):
-            if skill in seen_skills:
+            resolved = skill.resolve()
+            if resolved in seen_skills:
                 continue
-            seen_skills.add(skill)
+            seen_skills.add(resolved)
             out += advise_skill(skill)
 
-    for base in (home / ".claude" / "agents", root / ".claude" / "agents"):
-        if base.is_dir():
-            for agent in sorted(base.rglob("*.md"))[:200]:
-                out += advise_agent(agent)
+    seen_agents: set[Path] = set()
+    for base in agent_roots:
+        if not base.is_dir():
+            continue
+        for agent in sorted(base.rglob("*.md"))[:200]:
+            resolved = agent.resolve()
+            if resolved in seen_agents:
+                continue
+            seen_agents.add(resolved)
+            out += advise_agent(agent)
 
     return _group(out)
 

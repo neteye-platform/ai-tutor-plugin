@@ -74,10 +74,11 @@ TOOLS = {
         "label": "OpenCode",
         "home": ".config/opencode",
         "context_files": ["AGENTS.md"],
-        # OpenCode's docs list six skill locations, including Claude Code's and the
-        # vendor-neutral .agents/ path, so a skill can be over budget in a directory
-        # this tool does not own.
-        "skill_dirs": ["skills", "../../.claude/skills", "../../.agents/skills"],
+        "skill_dirs": ["skills"],
+        # OpenCode also reads Claude Code's and the vendor-neutral .agents/ locations.
+        # These are listed separately, relative to home and project root, because
+        # embedding "../.." in skill_dirs escaped above the project being audited.
+        "extra_skill_roots": [".claude/skills", ".agents/skills"],
         "agent_dirs": ["agents"],
         "audit_hint": "Check opencode.json for unused plugins.",
         "context_cmd": None,
@@ -166,6 +167,11 @@ def check_skills(root: Path, home: Path, tool: str) -> list[Finding]:
     out: list[Finding] = []
     bases = [home / spec["home"] / d for d in spec["skill_dirs"]]
     bases += [root / f".{tool}" / d for d in spec["skill_dirs"]]
+    # Extra roots are anchored at home and at the project root, never traversed up
+    # from a tool's own config dir, so the audit stays inside the intended scope.
+    for extra in spec.get("extra_skill_roots", ()):
+        bases.append(home / extra)
+        bases.append(root / extra)
     for base in bases:
         if not base.is_dir():
             continue

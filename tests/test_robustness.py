@@ -68,15 +68,65 @@ for script, payload, label in CASES:
         fails += 1
     print(f"  {script:18} {label:24} {status}")
 
-    # advise.py is a CLI, so it may print prose; it must still not crash.
-    # Fixed interpreter, repo-controlled script path, shell=False: no injection surface.
+# Corrupt state files: valid JSON of the wrong shape parses fine and then raises on
+# first use. A partial write during pruning, or two sessions writing at once, produces
+# exactly this, so each field must be validated rather than trusted.
+STATE_CASES = [
+    ("[]", "state is an array"),
+    ("42", "state is a scalar"),
+    ('"hi"', "state is a string"),
+    ("{}", "state is an empty dict"),
+    ('{"foo": 1}', "state missing every key"),
+    ('{"turns": "x", "streak": 0, "shown": []}', "turns is a string"),
+    ('{"turns": 0, "streak": null, "shown": []}', "streak is null"),
+    ('{"turns": 0, "streak": 0, "shown": "abc"}', "shown is a string"),
+    ('{"turns": 0, "streak": 0, "shown": [1, 2]}', "shown holds non-strings"),
+]
+
+sys.path.insert(0, str(REPO / "scripts"))
+import coach  # imported after sys.path is extended above
+
+for content, label in STATE_CASES:
+    session = "robustness_probe"
+    state_file = coach.STATE_DIR / f"{session}.json"
+    try:
+        coach.STATE_DIR.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(content)
+    except OSError:
+        print(f"  {'coach.py':18} {label:24} skipped (state dir unwritable)")
+        continue
     proc = subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "advise.py"), "/nonexistent"],
+        [sys.executable, str(REPO / "scripts" / "coach.py")],
+        input=json.dumps(
+            {"prompt": "a clear prompt naming src/x.ts line 3", "session_id": session}
+        ),
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=20,
         check=False,
     )
+    probs = []
+    if proc.returncode != 0:
+        probs.append(f"exit={proc.returncode}")
+    if proc.stderr.strip():
+        probs.append(proc.stderr.strip().splitlines()[-1][:50])
+    if probs:
+        fails += 1
+    print(
+        f"  {'coach.py':18} {label:24} {'FAIL ' + '; '.join(probs) if probs else 'ok'}"
+    )
+    state_file.unlink(missing_ok=True)
+
+# advise.py is a CLI, so it may print prose; it must still not crash. Checked once,
+# outside the loop above.
+# Fixed interpreter, repo-controlled script path, shell=False: no injection surface.
+proc = subprocess.run(
+    [sys.executable, str(REPO / "scripts" / "advise.py"), "/nonexistent"],
+    capture_output=True,
+    text=True,
+    timeout=30,
+    check=False,
+)
 bad = proc.returncode != 0 or proc.stderr.strip()
 fails += bool(bad)
 print(

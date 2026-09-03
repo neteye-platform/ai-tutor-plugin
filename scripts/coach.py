@@ -245,12 +245,38 @@ def read_used_pct(data):
         return None
 
 
+DEFAULT_STATE = {"turns": 0, "streak": 0, "shown": []}
+
+
+def _int_or_zero(value) -> int:
+    """bool is an int subclass, so exclude it explicitly."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def load_state(session):
+    """Read per-session bookkeeping, tolerating a corrupt or stale file.
+
+    Valid JSON of the wrong shape is the dangerous case: an array, a scalar, or a dict
+    with a missing or wrongly-typed key all parse cleanly and then raise on first use,
+    which kills the hook and breaks the user's turn. A partial write during pruning, or
+    two sessions writing at once, produces exactly that, so every field is validated
+    rather than trusted.
+    """
     path = STATE_DIR / f"{session}.json"
     try:
-        return json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return {"turns": 0, "streak": 0, "shown": []}
+        raw = json.loads(path.read_text())
+    except (OSError, ValueError):  # ValueError covers JSONDecodeError
+        return dict(DEFAULT_STATE)
+    if not isinstance(raw, dict):
+        return dict(DEFAULT_STATE)
+    shown = raw.get("shown")
+    return {
+        "turns": _int_or_zero(raw.get("turns")),
+        "streak": _int_or_zero(raw.get("streak")),
+        "shown": [k for k in shown if isinstance(k, str)]
+        if isinstance(shown, list)
+        else [],
+    }
 
 
 def save_state(session, state):
@@ -337,7 +363,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             f"fourth time."
         )
 
-    # 3. Repeated tool failures. Another attempt rarely helps; the premise is wrong.
+    # 4. Repeated tool failures. Another attempt rarely helps; the premise is wrong.
     if sig["error_streak"] >= ERROR_STREAK and fresh("errors"):
         return "errors", (
             f"the last {sig['error_streak']} tool calls failed. A repeated failure usually "
@@ -346,7 +372,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             f"Stop and say what you actually expected to happen."
         )
 
-    # 4. Files changed and nothing checked them. The documented trust-then-verify gap.
+    # 5. Files changed and nothing checked them. The documented trust-then-verify gap.
     if sig["no_test_after_edit"] and sig["edits"] >= 1 and fresh("unverified_edit"):
         return "unverified_edit", (
             "files have been edited but nothing test-shaped has run since. Right now the "
@@ -354,7 +380,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             "the test suite, a build, or a linter before you move on."
         )
 
-    # 5. Exploration with no output. The 'infinite exploration' anti-pattern.
+    # 6. Exploration with no output. The 'infinite exploration' anti-pattern.
     if (
         sig["tool_calls"] >= EXPLORING_CALLS
         and sig["reads_since_edit"] >= EXPLORING_READS
@@ -368,7 +394,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             f"narrow it to one file."
         )
 
-    # 6. A bug report with no evidence in it.
+    # 7. A bug report with no evidence in it.
     if (
         BROKEN_NO_DETAIL.search(prompt)
         and not HAS_EVIDENCE.search(prompt)
@@ -381,7 +407,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             "first, which usually means reading half the codebase to find candidates."
         )
 
-    # 7. Unbounded rewrite. The diff becomes too large to review honestly.
+    # 8. Unbounded rewrite. The diff becomes too large to review honestly.
     if (
         BIG_REWRITE.search(prompt)
         and not SCOPE_LIMIT.search(prompt)
@@ -397,7 +423,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
     # actually happened is stronger evidence than how a sentence is worded, and a short
     # prompt during a real problem should surface the problem, not the prompt style.
 
-    # 8. Same file read repeatedly. Usually means it should have been kept in view.
+    # 9. Same file read repeatedly. Usually means it should have been kept in view.
     if (
         sig["repeat_reads"]
         and sig["repeat_reads"][1] >= REREAD_COUNT
@@ -410,7 +436,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             f"once and ask for the relevant part to be quoted rather than re-read."
         )
 
-    # 9. Mostly shell calls. A code-intelligence plugin is usually cheaper.
+    # 10. Mostly shell calls. A code-intelligence plugin is usually cheaper.
     if (
         sig["tool_calls"] >= BASH_HEAVY_CALLS
         and sig["bash_ratio"] >= BASH_HEAVY_RATIO
@@ -423,7 +449,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             f"at the same time."
         )
 
-    # 10. Vague prompt: short with nothing concrete to anchor on.
+    # 11. Vague prompt: short with nothing concrete to anchor on.
     if len(words) <= VAGUE_MAX_WORDS and not CONCRETE.search(prompt) and fresh("vague"):
         return "vague", (
             "that prompt is short and names no file, symbol, or error. Vague prompts trigger "
@@ -432,7 +458,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             "and what 'done' means will cost you less and get you closer."
         )
 
-    # 9. Build request with no verification signal named.
+    # 12. Build request with no verification signal named.
     if (
         BUILD_MARKERS.search(prompt)
         and not VERIFY_MARKERS.search(prompt)
@@ -446,7 +472,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             "Add 'and run the tests' or say what proof you want back."
         )
 
-    # 10. Several unrelated asks bundled into one message.
+    # 13. Several unrelated asks bundled into one message.
     if (
         len(MULTI_TASK.findall(prompt)) >= MULTI_TASK_HITS
         and len(words) >= 12
@@ -458,7 +484,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             "tell which part failed. Send them one at a time, verifying as you go."
         )
 
-    # 11. Hedged wording. Politeness is fine; vagueness about the target is not.
+    # 14. Hedged wording. Politeness is fine; vagueness about the target is not.
     if len(HEDGES.findall(prompt)) >= 2 and fresh("hedging"):
         return "hedging", (
             "the wording here is hedged ('maybe', 'sort of', 'if you want'), which leaves "
@@ -466,20 +492,7 @@ def pick_nudge(prompt, state, used_pct, tool="claude", sig=None):
             "specification: say the outcome, and say what would count as done."
         )
 
-    # 12. Same file read repeatedly. Usually means it should have been kept in view.
-    if (
-        sig["repeat_reads"]
-        and sig["repeat_reads"][1] >= REREAD_COUNT
-        and fresh("reread")
-    ):
-        name = Path(sig["repeat_reads"][0]).name
-        return "reread", (
-            f"'{name}' has been read {sig['repeat_reads'][1]} times this session. Each read "
-            f"costs the file's full length again. If it matters throughout the task, say so "
-            f"once and ask for the relevant part to be quoted rather than re-read."
-        )
-
-    # 13. Long session. Gentle, once only.
+    # 15. Long session. Gentle, once only.
     if state["turns"] >= SESSION_TURN_HINT and fresh("length"):
         return "length", (
             f"{state['turns']} turns in this session. If you've moved on to unrelated work "
