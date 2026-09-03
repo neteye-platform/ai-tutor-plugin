@@ -45,9 +45,15 @@ def _records(path: Path, limit: int = WINDOW_RECORDS) -> list[dict]:
         if not line.startswith("{"):
             continue
         try:
-            out.append(json.loads(line))
+            rec = json.loads(line)
         except (json.JSONDecodeError, ValueError):
             continue
+        # Filter here, once, rather than guarding every rec.get() downstream. A JSONL
+        # line can legitimately be an array or a scalar, and every consumer below
+        # assumes a mapping. Guarding at the boundary is the only version of this that
+        # stays correct as new consumers are added.
+        if isinstance(rec, dict):
+            out.append(rec)
     return out
 
 

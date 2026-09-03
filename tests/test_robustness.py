@@ -159,6 +159,43 @@ with tempfile.TemporaryDirectory() as tmp:
             label,
         )
 
+# Whole records that are not mappings at all. A JSONL line can legitimately be an
+# array or a scalar, and the marker strings the parsers grep for can appear inside one,
+# so `rec.get(...)` must never run before the record's own type is checked. These are
+# raw lines rather than dicts, so they bypass json.dumps entirely.
+RAW_LINE_CASES = [
+    ('["compactMetadata"]', "array containing the marker"),
+    ('{"a": ["compactMetadata"]}', "marker nested in an array"),
+    ('["message", "usage"]', "array of field names"),
+    ("[1, 2, 3]", "array of numbers"),
+    ('{"compactMetadata": ["not", "a", "dict"]}', "compactMetadata is an array"),
+    ('{"compactMetadata": {"preTokens": "lots"}}', "preTokens is a string"),
+    ('{"message": {"usage": {"input_tokens": "many"}}}', "token count is a string"),
+]
+
+with tempfile.TemporaryDirectory() as tmp:
+    for i, (raw, label) in enumerate(RAW_LINE_CASES):
+        path = Path(tmp) / f"r{i}.jsonl"
+        # Repeat so any threshold-gated code path is reached, and include one sane
+        # usage record so the walk does not stop before touching the bad lines.
+        path.write_text(
+            "\n".join(
+                [raw] * 3 + ['{"message": {"usage": {"input_tokens": 10}}}'] + [raw] * 2
+            )
+            + "\n"
+        )
+        check(
+            "coach.py",
+            json.dumps(
+                {
+                    "prompt": "fix the parser",
+                    "session_id": f"raw{i}",
+                    "transcript_path": str(path),
+                }
+            ),
+            label,
+        )
+
 # Corrupt state files: valid JSON of the wrong shape parses fine and then raises on
 # first use. A partial write during pruning, or two sessions writing at once, produces
 # exactly this, so each field must be validated rather than trusted.

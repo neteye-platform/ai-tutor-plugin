@@ -57,6 +57,10 @@ def observed_window(records: list[str]) -> int | None:
             rec = _json.loads(line)
         except (ValueError, TypeError):
             continue
+        # The marker string can appear inside a record that is not a mapping at all,
+        # e.g. the JSON array ["compactMetadata"], so check the record before .get().
+        if not isinstance(rec, dict):
+            continue
         meta = rec.get("compactMetadata")
         if not isinstance(meta, dict):
             continue
@@ -104,18 +108,35 @@ def _usage_from_record(rec: dict) -> dict | None:
     return None
 
 
+def _int(value: object) -> int:
+    """Coerce a token count to an int, treating anything unusable as zero.
+
+    Token counts are self-reported by the host and are not guaranteed numeric: a string
+    here used to raise ValueError out of the hook. Zero is the safe reading, because it
+    biases the estimate downward and therefore toward staying quiet.
+    """
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0
+
+
 def _total_input(usage: dict) -> int | None:
     """Sum the input-side token counts. Mirrors the statusline's definition."""
     keys = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
     if any(k in usage for k in keys):
-        return sum(int(usage.get(k) or 0) for k in keys)
+        return sum(_int(usage.get(k)) for k in keys)
     # OpenCode nests differently: {input, output, cache: {read, write}}
     if "input" in usage:
-        cache = usage.get("cache") or {}
+        cache = usage.get("cache")
+        cache = cache if isinstance(cache, dict) else {}
         return (
-            int(usage.get("input") or 0)
-            + int(cache.get("read") or 0)
-            + int(cache.get("write") or 0)
+            _int(usage.get("input"))
+            + _int(cache.get("read"))
+            + _int(cache.get("write"))
         )
     return None
 
@@ -145,6 +166,8 @@ def used_percentage(
         try:
             rec = json.loads(line)
         except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(rec, dict):
             continue
         if not seen_model:
             msg = rec.get("message")
