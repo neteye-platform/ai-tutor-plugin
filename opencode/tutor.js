@@ -20,7 +20,11 @@
  * .opencode/plugins/tutor.js (project).
  */
 
-const SCRIPTS = new URL("../scripts/", import.meta.url).pathname
+// Resolved relative to this file. The documented layout puts the plugin at
+// <config>/plugins/tutor.js and the scripts at <config>/tutor/scripts/, so go up one
+// level from plugins/ and back down through tutor/. Keep this in step with the install
+// instructions in the README: if one moves, the other must move with it.
+const SCRIPTS = new URL("../tutor/scripts/", import.meta.url).pathname
 
 /** Run a tutor script, feeding it a Claude-Code-shaped payload on stdin. */
 async function runScript($, name, payload) {
@@ -84,7 +88,9 @@ function firstLine(message) {
 }
 
 export const TutorPlugin = async ({ client, directory, $ }) => {
-  const seen = new Set()
+  // Keyed by sessionID: a nudge already shown in one session must still be available
+  // in the next. A single flat Set would suppress it for the lifetime of the process.
+  const seenBySession = new Map()
 
   return {
     /** Config audit, once per session. */
@@ -128,6 +134,11 @@ export const TutorPlugin = async ({ client, directory, $ }) => {
       if (!out?.systemMessage) return
 
       // Never repeat a nudge within a session; repetition is what gets it muted.
+      let seen = seenBySession.get(sessionID)
+      if (!seen) {
+        seen = new Set()
+        seenBySession.set(sessionID, seen)
+      }
       const key = out.systemMessage.slice(0, 40)
       if (seen.has(key)) return
       seen.add(key)

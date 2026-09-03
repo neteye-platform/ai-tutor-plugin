@@ -190,7 +190,9 @@ def advise_skill(path: Path) -> list[str]:
 
 def advise_agent(path: Path) -> list[str]:
     """Advice about a subagent definition."""
-    text = "".join(_lines(path)[:40])
+    # Join with newlines: the `^description:` matcher below is multiline, so
+    # concatenating without separators would make it match nothing.
+    text = "\n".join(_lines(path)[:40])
     out: list[str] = []
     if not text.startswith("---"):
         return out

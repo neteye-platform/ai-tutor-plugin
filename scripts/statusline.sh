@@ -60,7 +60,22 @@ fi
 
 line1="${ctx_col}${bar} ${used}%${RESET}  ${cache}  ${DIM}${model}${RESET}"
 
-state_dir="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/tutor-state}"
+# Must match _state_dir() in coach.py exactly, or the two write to different places
+# and the note row silently never appears: CLAUDE_PLUGIN_DATA, then TUTOR_STATE_DIR,
+# then the first host config dir that exists, then a neutral cache dir.
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
+  state_dir="$CLAUDE_PLUGIN_DATA"
+elif [[ -n "${TUTOR_STATE_DIR:-}" ]]; then
+  state_dir="$TUTOR_STATE_DIR"
+elif [[ -d "$HOME/.claude" ]]; then
+  state_dir="$HOME/.claude/tutor-state"
+elif [[ -d "$HOME/.codex" ]]; then
+  state_dir="$HOME/.codex/tutor-state"
+elif [[ -d "$HOME/.config/opencode" ]]; then
+  state_dir="$HOME/.config/opencode/tutor-state"
+else
+  state_dir="$HOME/.cache/ai-tutor"
+fi
 
 # Publish context usage for coach.py. Hook payloads do NOT include context_window
 # (it is a statusline-only field), so this file is the only way the prompt coach can

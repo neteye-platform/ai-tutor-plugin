@@ -30,10 +30,17 @@ CASES = [
     ("lint.py", "{}", "no cwd"),
     ("lint.py", '{"cwd":null}', "null cwd"),
     ("review_prompt.py", '{"prompt":"test a thing"}', "disabled by default"),
+    # Regression cases: nested transcript fields are untrusted, and a wrong type here
+    # used to raise AttributeError and break the turn.
+    ("coach.py", '{"prompt":"x","transcript_path":"/dev/null"}', "empty transcript"),
+    ("lint.py", "[]", "json array on stdin"),
+    ("lint.py", "42", "bare scalar on stdin"),
+    ("lint.py", "not json", "non-json on stdin"),
 ]
 
 fails = 0
 for script, payload, label in CASES:
+    # Fixed interpreter, repo-controlled script path, shell=False: no injection surface.
     proc = subprocess.run(
         [sys.executable, str(REPO / "scripts" / script)],
         input=payload,
@@ -47,25 +54,29 @@ for script, payload, label in CASES:
         problems.append(f"exit={proc.returncode}")
     if proc.stderr.strip():
         problems.append("stderr=" + proc.stderr.strip().splitlines()[-1][:60])
-    # Any stdout must be valid JSON, or the host cannot parse it.
+    # Any stdout must be valid JSON, or the host cannot parse it. Human-readable
+    # prose reaching a hook is a bug: the tool expects JSON or nothing.
     if proc.stdout.strip():
         try:
             json.loads(proc.stdout)
         except (json.JSONDecodeError, ValueError):
             problems.append("stdout not valid JSON")
+        if proc.stdout.startswith("tutor:"):
+            problems.append("leaked CLI prose into hook output")
     status = "FAIL " + "; ".join(problems) if problems else "ok"
     if problems:
         fails += 1
     print(f"  {script:18} {label:24} {status}")
 
-# advise.py is a CLI, so it may print prose; it must still not crash.
-proc = subprocess.run(
-    [sys.executable, str(REPO / "scripts" / "advise.py"), "/nonexistent"],
-    capture_output=True,
-    text=True,
-    timeout=30,
-    check=False,
-)
+    # advise.py is a CLI, so it may print prose; it must still not crash.
+    # Fixed interpreter, repo-controlled script path, shell=False: no injection surface.
+    proc = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "advise.py"), "/nonexistent"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
 bad = proc.returncode != 0 or proc.stderr.strip()
 fails += bool(bad)
 print(

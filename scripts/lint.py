@@ -74,7 +74,10 @@ TOOLS = {
         "label": "OpenCode",
         "home": ".config/opencode",
         "context_files": ["AGENTS.md"],
-        "skill_dirs": ["skills"],
+        # OpenCode's docs list six skill locations, including Claude Code's and the
+        # vendor-neutral .agents/ path, so a skill can be over budget in a directory
+        # this tool does not own.
+        "skill_dirs": ["skills", "../../.claude/skills", "../../.agents/skills"],
         "agent_dirs": ["agents"],
         "audit_hint": "Check opencode.json for unused plugins.",
         "context_cmd": None,
@@ -168,7 +171,10 @@ def check_skills(root: Path, home: Path, tool: str) -> list[Finding]:
             continue
         for skill in sorted(base.glob("*/SKILL.md")):
             lines = line_count(skill)
-            body = skill.read_text(errors="replace")
+            try:
+                body = skill.read_text(errors="replace")
+            except OSError:
+                continue  # unreadable file: skip it rather than break the hook
             if lines > SKILL_MD_LINES:
                 msg = (
                     f"skill '{skill.parent.name}' is {lines} lines (target: under "
@@ -203,7 +209,10 @@ def check_agents(root: Path, home: Path, tool: str) -> list[Finding]:
         if not base.is_dir():
             continue
         for agent in base.rglob("*.md"):
-            text = agent.read_text(errors="replace")
+            try:
+                text = agent.read_text(errors="replace")
+            except OSError:
+                continue  # unreadable file: skip it rather than break the hook
             # The description lives in frontmatter; approximate with the header block.
             if text.startswith("---") and "---" in text[3:]:
                 head = text.split("---")[1]
@@ -323,18 +332,23 @@ def main() -> None:
     cwd = os.getcwd()
     hook_mode = False
     if not sys.stdin.isatty():
+        # Anything arriving on a non-tty stdin came from a hook, so stay on the hook
+        # output path no matter how malformed it is. Emitting the human-readable report
+        # into a hook context would put prose where JSON is expected.
+        hook_mode = True
         raw = sys.stdin.read().strip()
+        payload = None
         if raw.startswith("{"):
             try:
                 payload = json.loads(raw)
-                if isinstance(payload, dict):
-                    # An explicit null must not replace a usable default.
-                    candidate = payload.get("cwd")
-                    if isinstance(candidate, str) and candidate:
-                        cwd = candidate
-                    hook_mode = True
             except (json.JSONDecodeError, ValueError):
-                pass
+                payload = None
+        if not isinstance(payload, dict):
+            sys.exit(0)  # nothing usable; a silent hook beats a broken one
+        # An explicit null must not replace a usable default.
+        candidate = payload.get("cwd")
+        if isinstance(candidate, str) and candidate:
+            cwd = candidate
 
     # Most urgent first, so the top line is the one worth acting on.
     findings = sorted(audit(cwd), key=lambda f: -f[0])

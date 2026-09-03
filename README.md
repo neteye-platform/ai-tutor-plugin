@@ -384,8 +384,8 @@ This is young software. Being straight about that:
 - **The terminal bell on Codex is untested.** `terminalSequence` is documented for
   Claude Code; Codex may ignore the unknown field or reject the payload. Hence the ❔.
 
-Verified against Claude Code 2.1.218, Codex CLI 0.145.0, and OpenCode 1.18.4. Some
-behaviour referenced in `SKILL.md` is gated on later Claude Code versions:
+Verified against Claude Code 2.1.218, Codex CLI 0.145.0, and the OpenCode 1.18.x line.
+Some behaviour referenced in `SKILL.md` is gated on later Claude Code versions:
 `/autocompact` needs 2.1.221+, cache TTL settings need 2.1.242+.
 
 Bug reports and threshold data from real use are especially welcome.

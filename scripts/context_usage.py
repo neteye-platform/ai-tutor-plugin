@@ -87,10 +87,14 @@ def _tail_lines(path: Path, limit: int = 400) -> list[str]:
 
 def _usage_from_record(rec: dict) -> dict | None:
     """Find a usage object, tolerating the different shapes across tools."""
+    # `message` and `info` are untrusted: a string or list here must not raise, or the
+    # hook dies and the user's turn breaks. Only dicts can carry a nested usage object.
+    msg = rec.get("message")
+    info = rec.get("info")
     for candidate in (
-        (rec.get("message") or {}).get("usage"),
+        msg.get("usage") if isinstance(msg, dict) else None,
         rec.get("usage"),
-        (rec.get("info") or {}).get("tokens"),  # OpenCode-style
+        info.get("tokens") if isinstance(info, dict) else None,  # OpenCode-style
     ):
         if isinstance(candidate, dict) and candidate:
             return candidate

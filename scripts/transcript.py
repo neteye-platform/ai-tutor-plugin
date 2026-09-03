@@ -51,6 +51,16 @@ def _records(path: Path, limit: int = WINDOW_RECORDS) -> list[dict]:
     return out
 
 
+def _as_dict(value: object) -> dict:
+    """Coerce a tool input to a dict.
+
+    Transcript fields are untrusted: a malformed or unexpected shape must not crash a
+    hook, because that breaks the user's turn. Callers only ever read keys, so an empty
+    dict is a safe stand-in for anything that is not one.
+    """
+    return value if isinstance(value, dict) else {}
+
+
 def _tool_calls(records: list[dict]) -> list[tuple[str, dict]]:
     """Extract (tool_name, input) pairs in order. Tolerates several transcript shapes."""
     calls: list[tuple[str, dict]] = []
@@ -60,11 +70,16 @@ def _tool_calls(records: list[dict]) -> list[tuple[str, dict]]:
         if isinstance(content, list):
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "tool_use":
-                    calls.append((block.get("name") or "", block.get("input") or {}))
+                    calls.append(
+                        (block.get("name") or "", _as_dict(block.get("input")))
+                    )
         # Codex and OpenCode may record a flatter shape.
         name = rec.get("tool_name") or rec.get("tool")
         if isinstance(name, str) and name:
-            calls.append((name, rec.get("tool_input") or rec.get("args") or {}))
+            raw = rec.get("tool_input")
+            if not isinstance(raw, dict):
+                raw = rec.get("args")
+            calls.append((name, _as_dict(raw)))
     return calls
 
 
