@@ -232,11 +232,14 @@ def read_used_pct(data):
     inline = window.get("used_percentage") if isinstance(window, dict) else None
     # bool is an int subclass, and NaN/Infinity survive json.loads and then raise in
     # int(), so both are screened before the conversion rather than after.
-    if isinstance(inline, (int, float)) and not isinstance(inline, bool):
-        if math.isfinite(inline):
-            # The host reports this; clamp rather than trust, so a bad reading cannot
-            # produce a "context is 9999% full" nudge.
-            return max(0, min(100, int(inline)))
+    if (
+        isinstance(inline, (int, float))
+        and not isinstance(inline, bool)
+        and math.isfinite(inline)
+    ):
+        # The host reports this; clamp rather than trust, so a bad reading cannot
+        # produce a "context is 9999% full" nudge.
+        return max(0, min(100, int(inline)))
 
     pct = used_percentage(data.get("transcript_path"), data.get("model"))
     if pct is not None:

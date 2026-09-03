@@ -269,10 +269,19 @@ with tempfile.TemporaryDirectory() as tmp:
     usable = Path(tmp) / "usage.jsonl"
     usable.write_text('{"message": {"usage": {"input_tokens": 180000}}}\n')
     for i, (model, label) in enumerate(MODEL_CASES):
+        # The case values are JSON literals, so round-trip them through json.loads
+        # rather than splicing them into a hand-built string: no quoting to get wrong,
+        # and a temp path containing a backslash or quote cannot corrupt the payload.
         check(
             "coach.py",
-            '{"prompt":"fix the parser","session_id":"model%d",'
-            '"model":%s,"transcript_path":"%s"}' % (i, model, usable),
+            json.dumps(
+                {
+                    "prompt": "fix the parser",
+                    "session_id": f"model{i}",
+                    "model": json.loads(model),
+                    "transcript_path": str(usable),
+                }
+            ),
             label,
         )
 
@@ -319,7 +328,10 @@ STATE_CASES = [
 ]
 
 sys.path.insert(0, str(REPO / "scripts"))
-import coach  # noqa: E402  -- import must follow the sys.path.insert above
+# Deliberately not at the top of the file: it must follow the sys.path.insert above.
+# No `noqa` needed, because ruff exempts imports that follow a sys.path modification;
+# adding one made RUF100 flag it as unused and strip the whole comment.
+import coach
 
 for content, label in STATE_CASES:
     session = "robustness_probe"
