@@ -85,6 +85,7 @@ expected and correct: hooks are code that runs on your machine.
 ```bash
 mkdir -p ~/.codex/tutor
 cp -r scripts ~/.codex/tutor/
+cp SKILL.md ~/.codex/tutor/               # the on-demand /tutor review
 cp codex/hooks.json ~/.codex/hooks.json   # merge by hand if you already have one
 ```
 
@@ -139,6 +140,7 @@ timeout = 5
 ```bash
 mkdir -p ~/.config/opencode/plugins ~/.config/opencode/tutor
 cp -r scripts ~/.config/opencode/tutor/
+cp SKILL.md ~/.config/opencode/tutor/     # the on-demand /tutor review
 cp opencode/tutor.js opencode/package.json ~/.config/opencode/plugins/
 ```
 
