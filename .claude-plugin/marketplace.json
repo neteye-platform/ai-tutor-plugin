@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "wuerth-tutor",
+  "owner": {
+    "name": "Marco Berlanda",
+    "url": "https://github.com/neteye-platform/ai-tutor-plugin"
+  },
+  "description": "Coaching and config-linting tools for Claude Code",
+  "plugins": [
+    {
+      "name": "tutor",
+      "source": "./",
+      "description": "Audits your Claude Code config against documented limits and coaches you when prompting habits drift into known anti-patterns.",
+      "category": "productivity",
+      "tags": [
+        "coaching",
+        "context-engineering",
+        "best-practices"
+      ]
+    }
+  ]
+}

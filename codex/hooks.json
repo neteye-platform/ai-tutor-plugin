@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.codex/tutor/scripts/lint.py",
+            "timeout": 10,
+            "statusMessage": "tutor: checking setup"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.codex/tutor/scripts/coach.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

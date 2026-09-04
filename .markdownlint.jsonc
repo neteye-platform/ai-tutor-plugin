@@ -1,0 +1,15 @@
+{
+  // Prose is wrapped at 90; tables and fenced code are exempt because breaking them
+  // would make them unreadable.
+  "MD013": {
+    "line_length": 90,
+    "tables": false,
+    "code_blocks": false
+  },
+  // Duplicate headings are fine when nested under different parents, e.g. one
+  // "Install" subsection per tool.
+  "MD024": { "siblings_only": true },
+  // Bare emphasis used as a pseudo-heading is not used here, but inline HTML is
+  // needed for the collapsible sections.
+  "MD033": false
+}
