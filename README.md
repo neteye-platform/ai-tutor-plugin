@@ -137,15 +137,23 @@ timeout = 5
 
 ### OpenCode
 
+`~/.config/opencode` below is the default global config directory; use your own if it
+differs (overridden via `OPENCODE_CONFIG_DIR`, or on Windows/an XDG-configured system).
+
 ```bash
-mkdir -p ~/.config/opencode/plugins ~/.config/opencode/tutor
-cp -r scripts ~/.config/opencode/tutor/
-cp SKILL.md ~/.config/opencode/tutor/     # the on-demand /tutor review
-cp opencode/tutor.js opencode/package.json ~/.config/opencode/plugins/
+mkdir -p ~/.config/opencode/plugins/tutor ~/.config/opencode/skills/tutor
+cp -r scripts ~/.config/opencode/plugins/tutor/
+cp opencode/plugins/tutor.ts ~/.config/opencode/plugins/
+cp SKILL.md ~/.config/opencode/skills/tutor/   # the on-demand /tutor review
 ```
 
-The plugin resolves the scripts relative to its own location, so keep that layout or
-edit the `SCRIPTS` constant at the top of `tutor.js`.
+For a project-local install instead of global, use `.opencode/plugins/` and
+`.opencode/skills/tutor/` in place of the `~/.config/opencode/...` paths above. No
+`opencode.json`/`opencode.jsonc` edit is needed either way.
+
+The plugin resolves the scripts relative to its own location, in a `tutor/scripts/`
+subdirectory next to it, so keep that layout or edit the `SCRIPTS` constant at the top
+of `tutor.ts`.
 
 ### No tool at all
 
@@ -244,7 +252,7 @@ differs is how each invokes it and how it shows you the result.
 | Live prompt coaching | ✅ `UserPromptSubmit` | ✅ `UserPromptSubmit` | ✅ `chat.message` |
 | Context-pressure nudge | ✅ | ✅ | ✅ |
 | Standalone CLI scripts | ✅ | ✅ | ✅ |
-| How messages reach you | `systemMessage` | `systemMessage` | TUI toast |
+| How messages reach you | `systemMessage` | `systemMessage` | TUI toast + chat note |
 | Terminal bell on urgent nudges | ✅ | ❔ untested | ❌ |
 | Coloured status line | ✅ | ❌ no such feature | ❌ no such feature |
 
@@ -254,7 +262,9 @@ convention. The Python runs unmodified on both.
 
 OpenCode is architecturally different — it has no shell-command hooks, and plugins are
 JavaScript modules loaded in-process. The bundled plugin shells out to the same scripts
-and renders their output as TUI toasts.
+and shows the result two ways: an immediate TUI toast, and a permanent note appended
+to the prompt it examined (visible in the transcript, excluded from what's replayed to
+the model), so a nudge you miss in the moment is still there on scrollback.
 
 <details>
 <summary>How the context-pressure nudge works everywhere, given no tool exposes usage
@@ -361,12 +371,12 @@ scripts/
   context_usage.py   context-window usage from a transcript
   review_prompt.py   opt-in assistant-judged prompt review
   statusline.sh      coloured gauge (Claude Code only)
-tests/               robustness checks
-.claude-plugin/      Claude Code plugin and marketplace manifests
-hooks/hooks.json     Claude Code hook config
-codex/hooks.json     Codex hook config
-opencode/tutor.js    OpenCode plugin (shells out to scripts/)
-SKILL.md             the on-demand /tutor review, read by all three hosts
+tests/                     robustness checks
+.claude-plugin/            Claude Code plugin and marketplace manifests
+hooks/hooks.json           Claude Code hook config
+codex/hooks.json           Codex hook config
+opencode/plugins/tutor.ts  OpenCode plugin (shells out to scripts/)
+SKILL.md                   the on-demand /tutor review, read by all three hosts
 ```
 
 ## Status and limitations
