@@ -20,7 +20,7 @@ whichever exists:
 
 ```bash
 for d in "$CLAUDE_SKILL_DIR" ~/.claude/skills/tutor ~/.codex/tutor \
-         ~/.config/opencode/tutor .; do
+         ~/.config/opencode/plugins/tutor .; do
   [ -f "$d/scripts/lint.py" ] && cd "$d" && break
 done
 python3 scripts/lint.py
