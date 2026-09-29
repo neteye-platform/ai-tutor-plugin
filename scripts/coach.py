@@ -567,7 +567,7 @@ def main():
                 f"{sirens(key)} {SHORT.get(key, key)}"
             )
         except OSError:
-            pass
+            pass  # the statusline note is decorative; losing it must not break the hook
 
         # A bare BEL is on the terminalSequence allowlist. Use it only for the two
         # nudges worth interrupting for, or it becomes an annoyance.
