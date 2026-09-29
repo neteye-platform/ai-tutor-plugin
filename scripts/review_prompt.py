@@ -130,7 +130,7 @@ def bump_count(session: str, current: int) -> None:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         (STATE_DIR / f"{session}.notes").write_text(str(current + 1))
     except OSError:
-        pass
+        pass  # write failed: the cap stops advancing, so coaching may keep firing
     # Old counters serve no purpose; coach.py prunes its own files the same way.
     cutoff = time.time() - STATE_TTL_S
     try:
@@ -138,7 +138,7 @@ def bump_count(session: str, current: int) -> None:
             if entry.stat().st_mtime < cutoff:
                 entry.unlink()
     except OSError:
-        pass
+        pass  # opportunistic pruning: stale counters are harmless, so never fail here
 
 
 def main() -> None:
